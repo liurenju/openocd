@@ -61,15 +61,23 @@ struct reg *register_get_by_name(struct reg_cache *first,
 
 struct reg_cache **register_get_last_cache_p(struct reg_cache **first)
 {
-	struct reg_cache **cache_p = first;
+  struct reg_cache **cache_p = first;
+  struct reg_cache *last = NULL;
 
-	if (*cache_p)
-		while (*cache_p)
-			cache_p = &((*cache_p)->next);
-	else
-		return first;
-
-	return cache_p;
+  if (*cache_p) {
+    while (*cache_p) {
+      last = *cache_p;
+      cache_p = &((*cache_p)->next);
+      if (*cache_p && (last == (*cache_p)->next)) {
+	break;
+      }
+    }
+  }
+  else {
+    return first;
+  }
+  
+  return cache_p;
 }
 
 /** Marks the contents of the register cache as invalid (and clean). */

@@ -184,6 +184,22 @@ static int armv8_write_core_reg(struct target *target, struct reg *r,
 	return ERROR_OK;
 }
 #endif
+
+# if 0
+static char *armv8_state_Strings(unsigned core_mode, enum arm_state core_state)
+{
+  if (core_state == ARM_STATE_AARCH64) {
+    return((char *)armv8_mode_name(core_mode));
+  }
+  if (core_state == ARM_STATE_ARM) {
+    return((char *)arm_mode_name(core_mode));
+  }
+  return("UNKNOWN");
+}
+# endif
+
+extern const char *arm_state_strings[];
+
 /**
  * Configures host-side ARM records to reflect the specified CPSR.
  * Later, code can use arm_reg_current() to map register numbers
@@ -248,7 +264,7 @@ void armv8_set_cpsr(struct arm *arm, uint32_t cpsr)
 				arm->core_mode = ARMV8_64_EL3H;
 			break;
 			default:
-				LOG_DEBUG("unknow mode 0x%x", (unsigned) (mode));
+				LOG_DEBUG("unknown mode 0x%x", (unsigned) (mode));
 			break;
 		}
 	} else {
@@ -262,8 +278,12 @@ void armv8_set_cpsr(struct arm *arm, uint32_t cpsr)
 	}
 
 	LOG_DEBUG("set CPSR %#8.8x: %s mode, %s state", (unsigned) cpsr,
-		armv8_mode_name(arm->core_mode),
-		armv8_state_strings[arm->core_state]);
+		  arm->core_state ==  ARM_STATE_AARCH64 ? 
+		                      armv8_mode_name(arm->core_mode) :
+		                      arm_mode_name(arm->core_mode),
+		  arm->core_state ==  ARM_STATE_AARCH64 ?
+		                      armv8_state_strings[arm->core_state] :
+		                      arm_state_strings[arm->core_state]);
 }
 
 static void armv8_show_fault_registers(struct target *target)
@@ -733,13 +753,14 @@ int armv8_aarch64_state(struct target *target)
 		return ERROR_FAIL;
 	}
 
-	LOG_USER("target halted in %s state due to %s, current mode: %s\n"
+	LOG_USER("target %s halted in %s state due to %s, current mode: %s\n"
 		"cpsr: 0x%8.8" PRIx32 " pc: 0x%" PRIx64 "%s",
+		 target_name(target),
 		armv8_state_strings[arm->core_state],
 		debug_reason_name(target),
 		armv8_mode_name(arm->core_mode),
-		buf_get_u32(arm->cpsr->value, 0, 32),
-		buf_get_u64(arm->pc->value, 0, 64),
+		 arm->cpsr ? buf_get_u32(arm->cpsr->value, 0, 32) : 0,
+		 arm->pc ? buf_get_u64(arm->pc->value, 0, 64) : 0,
 		arm->is_semihosting ? ", semihosting" : "");
 
 	return ERROR_OK;
@@ -825,7 +846,6 @@ static const struct {
 	{ ARMV8_xPSR, "CPSR", 32, REG_TYPE_INT, "general", "org.gnu.gdb.aarch64.core" },
 };
 # else /* old */
-
 static const struct {
 	unsigned id;
 	const char *name;
@@ -871,7 +891,8 @@ static const struct {
 
 	{ ARMV8_xPSR, "xPSR", 64, REG_TYPE_INT, "general", "org.gnu.gdb.arm.m-profile" },
 };
-#endif /*old */
+# endif /* old */
+
 #define ARMV8_NUM_REGS ARRAY_SIZE(armv8_regs)
 
 
@@ -944,7 +965,11 @@ struct reg_cache *armv8_build_reg_cache(struct target *target)
 
 		reg_list[i].name = armv8_regs[i].name;
 		reg_list[i].size = armv8_regs[i].bits;
-		reg_list[i].value = calloc(1, 8);
+# if 1
+		reg_list[i].value = calloc(1, 8); /* 8 bytes in reg, not 4 */
+# else
+		reg_list[i].value = calloc(1, 4);
+# endif
 		reg_list[i].dirty = 0;
 		reg_list[i].valid = 0;
 		reg_list[i].type = &armv8_reg_type;
@@ -979,6 +1004,24 @@ struct reg_cache *armv8_build_reg_cache(struct target *target)
 struct reg *armv8_reg_current(struct arm *arm, unsigned regnum)
 {
 	struct reg *r;
+# if 1
+	if (arm->core_cache == NULL) {
+	  return(NULL);
+	}
+# else
+	struct target *target = arm->target;
+	if (arm->core_cache == NULL) {
+	  if (target->reg_cache == NULL) {
+	    struct reg_cache *cache = armv8_build_reg_cache(target);
+	    if (cache != NULL) {
+	      *register_get_last_cache_p(&target->reg_cache) = cache;
+	    }
+	    else {
+	      return(NULL);
+	    }
+	  }
+	}
+# endif
 
 	if (regnum > (ARMV8_LAST_REG - 1))
 		return NULL;
@@ -1001,15 +1044,24 @@ int armv8_get_gdb_reg_list(struct target *target,
 {
 	struct arm *arm = target_to_arm(target);
 	unsigned int i;
+	
+# if 1
+	if (target->state != TARGET_HALTED) {
+	  return(ERROR_TARGET_NOT_HALTED);
+	}
+# endif
 
 	switch (reg_class) {
 	case REG_CLASS_GENERAL:
 		*reg_list_size = 34;
 		*reg_list = malloc(sizeof(struct reg *) * (*reg_list_size));
 
-		for (i = 0; i < 34; i++)
-				(*reg_list)[i] = armv8_reg_current(arm, i);
-
+		for (i = 0; i < 34; i++) {
+		  (*reg_list)[i] = armv8_reg_current(arm, i);
+		  if (target->state != TARGET_HALTED) {
+		    (*reg_list)[i]->dirty = true; /* mark as dirty -- NOT CURRENT */
+		  }
+		}
 		return ERROR_OK;
 		break;
 
@@ -1017,8 +1069,12 @@ int armv8_get_gdb_reg_list(struct target *target,
 		*reg_list_size = 34;
 		*reg_list = malloc(sizeof(struct reg *) * (*reg_list_size));
 
-		for (i = 0; i < 34; i++)
-				(*reg_list)[i] = armv8_reg_current(arm, i);
+		for (i = 0; i < 34; i++) {
+		  (*reg_list)[i] = armv8_reg_current(arm, i);
+		  if (target->state != TARGET_HALTED) {
+		    (*reg_list)[i]->dirty = true; /* mark as dirty -- NOT CURRENT */
+		  }
+		}
 
 		return ERROR_OK;
 		break;

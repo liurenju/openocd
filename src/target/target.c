@@ -2502,6 +2502,7 @@ COMMAND_HANDLER(handle_reg_command)
 	/* list all available registers for the current target */
 	if (CMD_ARGC == 0) {
 		struct reg_cache *cache = target->reg_cache;
+		struct reg_cache *cache2 = NULL;
 
 		count = 0;
 		while (cache) {
@@ -2530,7 +2531,11 @@ COMMAND_HANDLER(handle_reg_command)
 							  reg->size) ;
 				}
 			}
+			cache2 = cache;
 			cache = cache->next;
+			if (cache == cache2) { /* in loop ... */
+			  break;
+			}
 		}
 
 		return ERROR_OK;

@@ -232,7 +232,7 @@ enum arm_mode armv4_5_number_to_mode(int number)
 	}
 }
 
-static const char *arm_state_strings[] = {
+const char *arm_state_strings[] = {
 	"ARM", "Thumb", "Jazelle", "ThumbEE",
 };
 
@@ -659,13 +659,14 @@ int arm_arch_state(struct target *target)
 		return ERROR_FAIL;
 	}
 
-	LOG_USER("target halted in %s state due to %s, current mode: %s\n"
+	LOG_USER("target %s halted in %s state due to %s, current mode: %s\n"
 		"cpsr: 0x%8.8" PRIx32 " pc: 0x%8.8" PRIx32 "%s",
+		 target_name(target),
 		arm_state_strings[arm->core_state],
 		debug_reason_name(target),
 		arm_mode_name(arm->core_mode),
-		buf_get_u32(arm->cpsr->value, 0, 32),
-		buf_get_u32(arm->pc->value, 0, 32),
+		arm->cpsr ? buf_get_u32(arm->cpsr->value, 0, 32) : 0,
+		arm->pc ? buf_get_u32(arm->pc->value, 0, 32) : 0,
 		arm->is_semihosting ? ", semihosting" : "");
 
 	return ERROR_OK;

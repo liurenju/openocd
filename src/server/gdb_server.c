@@ -1336,6 +1336,7 @@ static int gdb_set_register_packet(struct connection *connection,
 static int gdb_error(struct connection *connection, int retval)
 {
 	LOG_DEBUG("Reporting %i to GDB as generic error", retval);
+//	abort();
 	gdb_send_error(connection, EFAULT);
 	return ERROR_OK;
 }
@@ -1421,7 +1422,7 @@ static int gdb_write_memory_packet(struct connection *connection,
 {
 	struct target *target = get_target_from_connection(connection);
 	char *separator;
-	uint64_t addr = 0;
+	uint32_t addr = 0;
 	uint32_t len = 0;
 
 	uint8_t *buffer;
@@ -1430,7 +1431,7 @@ static int gdb_write_memory_packet(struct connection *connection,
 	/* skip command character */
 	packet++;
 
-	addr = strtoull(packet, &separator, 16);
+	addr = strtoul(packet, &separator, 16);
 
 	if (*separator != ',') {
 		LOG_ERROR("incomplete write memory packet received, dropping connection");
@@ -1446,7 +1447,7 @@ static int gdb_write_memory_packet(struct connection *connection,
 
 	buffer = malloc(len);
 
-	LOG_DEBUG("addr: 0x%16.16" PRIx64 ", len: 0x%8.8" PRIx32 "", addr, len);
+	LOG_DEBUG("addr: 0x%8.8" PRIx32 ", len: 0x%8.8" PRIx32 "", addr, len);
 
 	if (unhexify((char *)buffer, separator, len) != (int)len)
 		LOG_ERROR("unable to decode memory packet");
@@ -2015,9 +2016,12 @@ static int get_reg_features_list(struct target *target, char const **feature_lis
 	*feature_list = calloc(1, sizeof(char *));
 
 	for (int i = 0; i < reg_list_size; i++) {
+	        if (reg_list[i] == NULL) { /* not initialized yet */
+		  continue;
+		}
+
 		if (reg_list[i]->exist == false)
 			continue;
-
 		if (reg_list[i]->feature != NULL
 			&& reg_list[i]->feature->name != NULL
 			&& (strcmp(reg_list[i]->feature->name, ""))) {

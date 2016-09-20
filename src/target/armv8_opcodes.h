@@ -71,6 +71,8 @@
 #define SYSTEM_DBG_DTRTX_EL0	0b1001100000101000
 #define SYSTEM_DBG_DBGDTR_EL0	0b1001100000100000
 
+#define SYSTEM_DBG_RMR_EL3      0b1111011000000010
+
 #define SYSTEM_CCSIDR			0b1100100000000000
 #define SYSTEM_CLIDR			0b1100100000000001
 #define SYSTEM_CSSELR			0b1101000000000000
@@ -112,6 +114,7 @@
 #define ARMV8_MSR_IM(Op1, CRm, Op2) \
 	(0xd500401f | ((Op1) << 16)  | ((CRm) << 8) | ((Op2) << 5))
 #define ARMV8_BKPT(Im) (0xD4200000 | ((Im & 0xffff) << 5))
+#define ARMV8_HALT(Im) (0xD4400000 | ((Im & 0xffff) << 5))
 #define ARMV8_MOVFSP_64(Rt) ((1 << 31) | 0x11000000 | (0x1f << 5) | (Rt))
 #define ARMV8_MOVTSP_64(Rt) ((1 << 31) | 0x11000000 | (Rt << 5) | (0x1F))
 #define ARMV8_MOVFSP_32(Rt) (0x11000000 | (0x1f << 5) | (Rt))

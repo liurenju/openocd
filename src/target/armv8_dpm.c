@@ -193,7 +193,7 @@ int dpmv8_modeswitch(struct arm_dpm *dpm, enum arm_mode mode)
 				break;
 			break;
 			default:
-				LOG_DEBUG("unknow mode 0x%x", (unsigned) ((cpsr & 0xC) >> 2));
+				LOG_DEBUG("unknown mode 0x%x", (unsigned) ((cpsr & 0xC) >> 2));
 				break;
 	}
 
@@ -208,35 +208,41 @@ int dpmv8_modeswitch(struct arm_dpm *dpm, enum arm_mode mode)
 	return retval;
 }
 
+# if 1 /* new */
 /* just read the register -- rely on the core mode being right */
 static int dpmv8_read_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 {
-	union {
-		uint64_t u64;
-		uint32_t u32;
-	} value;
+        struct reg *r2;
+	uint32_t value = 0;
+	uint64_t value_64;
 	int retval = ERROR_FAIL;
+
+	if (r == NULL) {
+	  return(retval);
+	}
+
+	r2 = r;
 
 	switch (regnum) {
 		case 0 ... 30:
 			retval = dpm->instr_read_data_dcc_64(dpm,
 				ARMV8_MSR_GP(SYSTEM_DBG_DBGDTR_EL0, regnum),
-				&value.u64);
+				&value_64);
 			break;
 	        case 31: /* SP */
 			retval = dpm->instr_read_data_r0_64(dpm,
 				ARMV8_MOVFSP_64(0),
-				&value.u64);
+				&value_64);
 			break;
 		case 32: /* PC */
 			retval = dpm->instr_read_data_r0_64(dpm,
 				ARMV8_MRS_DLR(0),
-				&value.u64);
+				&value_64);
 			break;
 		case 33: /* CPSR */
 			retval = dpm->instr_read_data_r0(dpm,
 				ARMV8_MRS_DSPSR(0),
-				&value.u32);
+				&value);
 			break;
 		default:
 			LOG_DEBUG("READ: %s fail", r->name);
@@ -244,22 +250,75 @@ static int dpmv8_read_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 	}
 
 	if (retval == ERROR_OK) {
-		r->valid = true;
-		r->dirty = false;
-		if (r->size == 64) {
-			buf_set_u64(r->value, 0, 64, value.u64);
-			LOG_DEBUG("READ: %s, %16.16" PRIx64, r->name,
-				  value.u64);
-		} else {
-			buf_set_u32(r->value, 0, 32, value.u32);
-			LOG_DEBUG("READ: %s, %8.8" PRIx32, r->name, value.u32);
-		}
+	  r = r2;
+	  r->valid = true;
+	  r->dirty = false;
+	  if (r->size == 64) {
+	    buf_set_u64(r->value, 0, 64, value_64); 
+	    LOG_DEBUG("READ: %s, %16.8llx", r->name, (unsigned long long) value_64);
+	  }
+	  else {
+	    buf_set_u32(r->value, 0, 32, value); 
+	    LOG_DEBUG("READ: %s, %8.8x", r->name, (unsigned) value);
+	  }
 	}
 	return retval;
 }
+# else /* old */
+/* just read the register -- rely on the core mode being right */
+static int dpmv8_read_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
+{
+        struct reg *r2;
+	uint32_t value;
+	uint64_t value_64;
+	int retval = ERROR_FAIL;
+
+	if (r == NULL) {
+	  return(retval);
+	}
+
+	r2 = r;
+	switch (regnum) {
+		case 0 ... 30:
+			retval = dpm->instr_read_data_dcc_64(dpm,
+				ARMV8_MSR_GP(SYSTEM_DBG_DBGDTR_EL0, regnum),
+				&value_64);
+			break;
+		case 31:
+			retval = dpm->instr_read_data_r0_64(dpm,
+				ARMV8_MOVFSP_64(0),
+				&value_64);
+			break;
+		case 32:
+			retval = dpm->instr_read_data_r0_64(dpm,
+				ARMV8_MRS_DLR(0),
+				&value_64);
+			break;
+		case 33:
+			retval = dpm->instr_read_data_r0(dpm,
+				ARMV8_MRS_DSPSR(0),
+				&value);
+		default:
+			LOG_DEBUG("READ: %s fail", r->name);
+			break;
+	}
+
+	if (retval == ERROR_OK) {
+	        r = r2;
+		r->valid = true;
+		r->dirty = false;
+		buf_set_u64(r->value, 0, 32, value_64);
+		if (r->size == 64)
+			LOG_DEBUG("READ: %s, %16.8llx", r->name, (unsigned long long) value_64);
+		else
+			LOG_DEBUG("READ: %s, %8.8x", r->name, (unsigned) value);
+	}
+	return retval;
+}
+# endif
 
 /* just write the register -- rely on the core mode being right */
-static int dpmv8_write_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
+int dpmv8_write_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 {
 	int retval = ERROR_FAIL;
 	uint32_t value = 0xFFFFFFFF;
@@ -630,8 +689,10 @@ static int armv8_dpm_full_context(struct target *target)
 			if (r->mode != mode)
 				continue;
 
+			/* CPSR ... hangover from armv7m cut/paste */
 			retval = dpmv8_read_reg(dpm,
-					&cache->reg_list[i], r->num);
+					&cache->reg_list[i],
+					(r->num == 33) ? 33 : r->num);
 			if (retval != ERROR_OK)
 				goto done;
 		}
@@ -872,7 +933,6 @@ void armv8_dpm_report_dscr(struct arm_dpm *dpm, uint32_t dscr)
 	/* Examine debug reason */
 	switch (dscr & 0x3F) {
 		/* FALL THROUGH -- assume a v6 core in abort mode */
-		case 0x2F:	/* HALT request from debugger */
 		case 0x13:	/* EDBGRQ */
 			target->debug_reason = DBG_REASON_DBGRQ;
 			break;
@@ -883,6 +943,7 @@ void armv8_dpm_report_dscr(struct arm_dpm *dpm, uint32_t dscr)
 		case 0x37:  /*exception catch*/
 		case 0x1B: /* Halt step*/
 		case 0x33: /*SW access dbg register*/
+		case 0x2F:	/* HALT request from debugger */
 			target->debug_reason = DBG_REASON_BREAKPOINT;
 			break;
 		case 0x2B:	/* asynch watchpoint */
@@ -922,6 +983,8 @@ int armv8_dpm_setup(struct arm_dpm *dpm)
 	cache = armv8_build_reg_cache(target);
 	if (!cache)
 		return ERROR_FAIL;
+
+	*register_get_last_cache_p(&target->reg_cache) = cache;
 
 	/* coprocessor access setup */
 	arm->mrc = dpmv8_mrc;

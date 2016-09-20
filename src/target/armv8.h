@@ -177,7 +177,7 @@ target_to_armv8(struct target *target)
 #define CPUV8_DBG_LOCKACCESS 0xFB0
 #define CPUV8_DBG_LOCKSTATUS 0xFB4
 
-
+#define CPUV8_DBG_EDESR         0x20  /* debug status register */
 #define CPUV8_DBG_EDECR		0x24
 #define CPUV8_DBG_WFAR0		0x30
 #define CPUV8_DBG_WFAR1		0x34
